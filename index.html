@@ -2,16 +2,238 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Ворон с картой</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Ворон с картой - Telegram Mini App</title>
+    
+    <!-- Подключаем Three.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    
+    <!-- Подключаем GLTFLoader для загрузки 3D моделей -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.min.js"></script>
+    
     <style>
-        body { margin: 0; overflow: hidden; font-family: sans-serif; }
-        #info { position: absolute; top: 10px; left: 10px; color: white; background: rgba(0,0,0,0.5); padding: 5px; border-radius: 3px; }
+        /* Сбрасываем стандартные отступы и скрываем скролл */
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #000;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            touch-action: none; /* Отключаем масштабирование на мобильных */
+        }
+        
+        /* Контейнер для Three.js сцены */
+        #game-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+        
+        /* Панель информации и отладки */
+        #info-panel {
+            position: absolute;
+            top: 15px;
+            left: 15px;
+            color: white;
+            background-color: rgba(0, 0, 0, 0.7);
+            padding: 12px 16px;
+            border-radius: 10px;
+            font-size: 14px;
+            max-width: 80%;
+            z-index: 10;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            backdrop-filter: blur(5px);
+        }
+        
+        /* Индикатор загрузки */
+        .loader {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: #4CAF50;
+            animation: spin 1s ease-in-out infinite;
+            margin-right: 10px;
+            vertical-align: middle;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        /* Сообщения об ошибках */
+        .error {
+            color: #ff6b6b;
+            font-weight: bold;
+        }
+        
+        .success {
+            color: #4CAF50;
+            font-weight: bold;
+        }
+        
+        /* Кнопка перезагрузки (появится при ошибке) */
+        #reload-btn {
+            display: none;
+            margin-top: 10px;
+            padding: 8px 16px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 14px;
+            cursor: pointer;
+        }
+        
+        /* Футер с инструкцией */
+        #instructions {
+            position: absolute;
+            bottom: 20px;
+            left: 0;
+            width: 100%;
+            text-align: center;
+            color: rgba(255, 255, 255, 0.6);
+            font-size: 12px;
+            z-index: 10;
+            padding: 0 15px;
+        }
+        
+        /* Адаптивность для очень маленьких экранов */
+        @media (max-width: 480px) {
+            #info-panel {
+                font-size: 12px;
+                padding: 10px 12px;
+            }
+            
+            #instructions {
+                font-size: 11px;
+                bottom: 10px;
+            }
+        }
+        
+        /* Для портретной ориентации */
+        @media (orientation: portrait) and (max-height: 600px) {
+            #info-panel {
+                top: 10px;
+                left: 10px;
+                right: 10px;
+                max-width: none;
+            }
+            
+            #instructions {
+                bottom: 5px;
+            }
+        }
     </style>
 </head>
 <body>
-    <div id="info">Загрузка игры...</div>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- Контейнер для Three.js сцены -->
+    <div id="game-container"></div>
+    
+    <!-- Панель информации -->
+    <div id="info-panel">
+        <span id="status-text">
+            <span class="loader"></span> Загрузка игры...
+        </span>
+        <div id="progress-text"></div>
+        <button id="reload-btn" onclick="window.location.reload()">Перезагрузить игру</button>
+    </div>
+    
+    <!-- Инструкция -->
+    <div id="instructions">
+        Ворон автоматически летит по траектории и сбрасывает фрагмент карты
+    </div>
+    
+    <!-- Основной скрипт игры -->
     <script src="app.js"></script>
+    
+    <!-- Скрипт для инициализации и обработки ошибок -->
+    <script>
+        // Глобальная функция для обновления статуса
+        function updateStatus(text, type = 'info') {
+            const statusEl = document.getElementById('status-text');
+            const progressEl = document.getElementById('progress-text');
+            
+            if (type === 'error') {
+                statusEl.innerHTML = `<span class="error">❌ ${text}</span>`;
+                document.getElementById('reload-btn').style.display = 'block';
+            } else if (type === 'success') {
+                statusEl.innerHTML = `<span class="success">✅ ${text}</span>`;
+            } else if (type === 'loading') {
+                statusEl.innerHTML = `<span class="loader"></span> ${text}`;
+            } else {
+                statusEl.innerHTML = text;
+            }
+        }
+        
+        // Функция для обновления прогресса загрузки
+        function updateProgress(loaded, total) {
+            const progressEl = document.getElementById('progress-text');
+            if (total > 0) {
+                const percent = Math.round((loaded / total) * 100);
+                const mbLoaded = (loaded / (1024 * 1024)).toFixed(1);
+                const mbTotal = (total / (1024 * 1024)).toFixed(1);
+                progressEl.innerHTML = `Модель: ${percent}% (${mbLoaded} МБ / ${mbTotal} МБ)`;
+            }
+        }
+        
+        // Проверка поддержки WebGL
+        function checkWebGLSupport() {
+            try {
+                const canvas = document.createElement('canvas');
+                const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+                return !!gl;
+            } catch (e) {
+                return false;
+            }
+        }
+        
+        // Проверка при загрузке страницы
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('Страница загружена, проверяю окружение...');
+            
+            // Проверяем поддержку WebGL
+            if (!checkWebGLSupport()) {
+                updateStatus('Ваш браузер не поддерживает 3D-графику (WebGL). Пожалуйста, обновите браузер или используйте другой.', 'error');
+                return;
+            }
+            
+            // Проверяем, загрузился ли Three.js
+            if (typeof THREE === 'undefined') {
+                updateStatus('Не удалось загрузить Three.js библиотеку. Проверьте интернет-соединение.', 'error');
+                return;
+            }
+            
+            // Проверяем GLTFLoader
+            if (typeof THREE.GLTFLoader === 'undefined') {
+                updateStatus('Не удалось загрузить GLTFLoader. Пожалуйста, обновите страницу.', 'error');
+                return;
+            }
+            
+            updateStatus('Загрузка игрового мира...', 'loading');
+            
+            // Запускаем игру через 100мс, чтобы все точно было готово
+            setTimeout(function() {
+                if (typeof init === 'function') {
+                    console.log('Запускаю инициализацию игры...');
+                } else {
+                    updateStatus('Ошибка: игровой скрипт не загрузился.', 'error');
+                }
+            }, 100);
+        });
+        
+        // Обработчик ошибок загрузки ресурсов
+        window.addEventListener('error', function(e) {
+            console.error('Глобальная ошибка:', e.error);
+            
+            if (e.target.tagName === 'SCRIPT' || e.target.tagName === 'LINK') {
+                updateStatus(`Ошибка загрузки ресурса: ${e.target.src || e.target.href}`, 'error');
+            }
+        });
+    </script>
 </body>
 </html>
