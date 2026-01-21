@@ -67,7 +67,7 @@ function loadRavenModel() {
     
     // 🔴 ВАЖНО: Прямая ссылка на ваш файл raven.glb в репозитории
     // Формат: https://github.com/ЛОГИН/РЕПОЗИТОРИЙ/raw/main/ФАЙЛ
-    const modelUrl = 'https://github.com/Fffibi9956-c/raven---game/raw/main/raven.glb';
+    const modelUrl = 'https://github.com/Fffibi9956-ctrl/raven---game/raw/refs/heads/main/raven.glb';
     
     loader.load(
         modelUrl,
